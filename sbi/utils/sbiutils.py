@@ -13,7 +13,7 @@ import torch
 import torch.distributions.transforms as torch_tf
 import zuko
 from pyro.distributions import Empirical
-from torch import Tensor, ones, optim, zeros
+from torch import Tensor, ones, zeros
 from torch import nn as nn
 from torch.distributions import (
     AffineTransform,
@@ -22,6 +22,7 @@ from torch.distributions import (
     biject_to,
     constraints,
 )
+from torch.optim.adam import Adam
 from zuko.flows import UnconditionalTransform
 
 from sbi.sbi_types import TorchTransform
@@ -399,16 +400,17 @@ def nle_nre_apt_msg_on_invalid_x(
             )
 
 
-def warn_on_iid_x(num_trials):
+def warn_on_batched_x(batch_size):
     """Warn if more than one x was passed."""
 
-    if num_trials > 1:
+    if batch_size > 1:
         warnings.warn(
-            f"An x with a batch size of {num_trials} was passed. "
-            + """It will be interpreted as a batch of independent and identically
-            distributed data X={x_1, ..., x_n}, i.e., data generated based on the
-            same underlying (unknown) parameter. The resulting posterior will be with
-            respect to entire batch, i.e,. p(theta | X).""",
+            f"An x with a batch size of {batch_size} was passed. "
+            + """Unless you are using `sample_batched` or `log_prob_batched`, this will
+            be interpreted as a batch of independent and identically distributed data
+            X={x_1, ..., x_n}, i.e., data generated based on the same underlying
+            (unknown) parameter. The resulting posterior will be with respect to entire
+            batch, i.e,. p(theta | X).""",
             stacklevel=2,
         )
 
@@ -935,7 +937,7 @@ def gradient_ascent(
 
     optimize_inits = theta_transform(optimize_inits)
     optimize_inits.requires_grad_(True)  # type: ignore
-    optimizer = optim.Adam([optimize_inits], lr=learning_rate)  # type: ignore
+    optimizer = Adam([optimize_inits], lr=learning_rate)  # type: ignore
 
     iter_ = 0
 

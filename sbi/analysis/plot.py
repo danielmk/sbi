@@ -23,6 +23,8 @@ from torch import Tensor
 from sbi.analysis.conditional_density import eval_conditional_density
 from sbi.utils.analysis_utils import pp_vals
 
+import pdb
+
 try:
     collectionsAbc = collections.abc  # type: ignore
 except AttributeError:
@@ -545,18 +547,18 @@ def ensure_numpy(t: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     return t
 
 
-def handle_nan_infs(samples: List[np.ndarray]) -> List[np.ndarray]:
+def handle_nan_infs(samples: np.ndarray) -> np.ndarray:
     """Check if there are NaNs or Infs in the samples."""
-    for i in range(len(samples)):
-        if np.isnan(samples[i]).any():
-            logging.warning("NaNs found in samples, omitting datapoints.")
-        if np.isinf(samples[i]).any():
-            logging.warning("Infs found in samples, omitting datapoints.")
-            # cast inf to nan, so they are omitted in the next step
-            np.nan_to_num(
-                samples[i], copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan
-            )
-        samples[i] = samples[i][~np.isnan(samples[i]).any(axis=1)]
+    # for i in range(len(samples)):
+    if np.isnan(samples).any():
+        logging.warning("NaNs found in samples, omitting datapoints.")
+    if np.isinf(samples).any():
+        logging.warning("Infs found in samples, omitting datapoints.")
+        # cast inf to nan, so they are omitted in the next step
+        np.nan_to_num(
+            samples, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan
+        )
+    # samples[i] = samples[i][~np.isnan(samples[i]).any(axis=1)]
     return samples
 
 
@@ -601,7 +603,7 @@ def infer_limits(
 
 
 def prepare_for_plot(
-    samples: Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor],
+    samples: Union[np.ndarray, torch.Tensor],
     limits: Optional[Union[List, torch.Tensor, np.ndarray]] = None,
     points: Optional[
         Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor]
@@ -612,13 +614,14 @@ def prepare_for_plot(
     of the samples.
     """
 
-    samples = convert_to_list_of_numpy(samples)
+    # samples = convert_to_list_of_numpy(samples)
+    samples = np.asarray(samples)
     if points is not None:
         points = convert_to_list_of_numpy(points)
 
     samples = handle_nan_infs(samples)
 
-    dim = samples[0].shape[1]
+    dim = samples.shape[1]
 
     if limits is None or limits == []:
         limits = infer_limits(samples, dim, points)
@@ -687,7 +690,7 @@ def get_conditional_diag_func(opts, limits, eps_margins, resolution):
 
 
 def pairplot(
-    samples: Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor],
+    samples: Union[np.ndarray, torch.Tensor],
     points: Optional[
         Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor]
     ] = None,
@@ -1300,7 +1303,10 @@ def _arrange_grid(
         Fig: matplotlib figure
         Axes: matplotlib axes
     """
-    dim = samples[0].shape[1]
+    dim = samples.shape[1]
+    samples_original = samples
+    samples = np.asarray(samples)
+    
     # Prepare points
     if points is None:
         points = []
@@ -1361,7 +1367,7 @@ def _arrange_grid(
     # Style figure
     fig.subplots_adjust(**fig_kwargs["fig_subplots_adjust"])
     fig.suptitle(fig_kwargs["title"], **fig_kwargs["title_format"])
-
+    # pdb.set_trace()
     # Main Loop through all subplots, style and create the figures
     for row_idx, row in enumerate(subset_rows):
         for col_idx, col in enumerate(subset_cols):
@@ -1396,12 +1402,13 @@ def _arrange_grid(
                 if excl_diag:
                     ax.axis("off")  # pyright: ignore reportOptionalMemberAccess
                 else:
-                    for sample_ind, sample in enumerate(samples):
-                        diag_f = diag_funcs[sample_ind]
+                    for sample_ind, sample in enumerate(samples.T):
+                        diag_f = diag_funcs[0]
                         if callable(diag_f):  # is callable:
                             diag_f(
-                                ax, sample[:, row], limits[row], diag_kwargs[sample_ind]
+                                ax, samples[:, row], limits[row], diag_kwargs[0]
                             )
+                        
 
                 if len(points) > 0:
                     extent = ax.get_ylim()  # pyright: ignore reportOptionalMemberAccess
@@ -1423,16 +1430,16 @@ def _arrange_grid(
                 if excl_upper:
                     ax.axis("off")  # pyright: ignore reportOptionalMemberAccess
                 else:
-                    for sample_ind, sample in enumerate(samples):
-                        upper_f = upper_funcs[sample_ind]
+                    for sample_ind, sample in enumerate(samples.T):
+                        upper_f = upper_funcs[0]
                         if callable(upper_f):
                             upper_f(
                                 ax,
-                                sample[:, col],
-                                sample[:, row],
+                                samples[:, col],
+                                samples[:, row],
                                 limits[col],
                                 limits[row],
-                                upper_kwargs[sample_ind],
+                                upper_kwargs[0],
                             )
                     if len(points) > 0:
                         for n, v in enumerate(points):
@@ -1447,16 +1454,16 @@ def _arrange_grid(
                 if excl_lower:
                     ax.axis("off")  # pyright: ignore reportOptionalMemberAccess
                 else:
-                    for sample_ind, sample in enumerate(samples):
-                        lower_f = lower_funcs[sample_ind]
+                    for sample_ind, sample in enumerate(samples.T):
+                        lower_f = lower_funcs[0]
                         if callable(lower_f):
                             lower_f(
                                 ax,
-                                sample[:, row],
-                                sample[:, col],
+                                samples[:, row],
+                                samples[:, col],
                                 limits[row],
                                 limits[col],
-                                lower_kwargs[sample_ind],
+                                lower_kwargs[0],
                             )
                     if len(points) > 0:
                         for n, v in enumerate(points):

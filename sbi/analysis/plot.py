@@ -4,7 +4,7 @@
 import collections
 import copy
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast, TypeVar
 from warnings import warn
 
 import matplotlib as mpl
@@ -688,9 +688,9 @@ def get_conditional_diag_func(opts, limits, eps_margins, resolution):
 
     return diag_func
 
-
+TNum = TypeVar('TNum', int, float)
 def pairplot(
-    samples: Union[np.ndarray, torch.Tensor],
+    samples: Union[np.ndarray, torch.Tensor, List[TNum]],
     points: Optional[
         Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor]
     ] = None,

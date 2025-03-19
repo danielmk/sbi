@@ -5,6 +5,7 @@ import collections
 import copy
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast, TypeVar
+from dataclasses import dataclass, field
 from warnings import warn
 
 import matplotlib as mpl
@@ -30,6 +31,32 @@ try:
 except AttributeError:
     collectionsAbc = collections
 
+@dataclass
+class FigKwargs:
+    legend: Optional[List[str]] = None
+    legend_kwargs: Dict = field(default_factory=dict) # type: ignore
+    points_labels: list = field(default_factory=lambda: [f"points_{idx}" for idx in range(10)])  
+    samples_labels: list = field(default_factory=lambda: [f"samples_{idx}" for idx in range(10)])
+    samples_colors: list = field(default_factory=lambda: plt.rcParams["axes.prop_cycle"].by_key()["color"][0::2])
+    points_colors: list = field(default_factory=lambda: plt.rcParams["axes.prop_cycle"].by_key()["color"][1::2])
+    tickformatter: mpl.ticker.FormatStrFormatter = mpl.ticker.FormatStrFormatter("%g") # type: ignore
+    tick_labels: Optional[Dict] = None
+    points_diag: dict = field(default_factory=dict)
+    points_offdiag: dict = field(default_factory=lambda: {"marker": ".", "markersize": 10,})
+    fig_bg_colors: dict = field(default_factory=lambda: {"offdiag": None, "diag": None, "lower": None})
+    fig_subplots_adjust: dict =  field(default_factory=lambda: {"top": 0.9,})
+    subplots: dict = field(default_factory=dict)
+    despine:  dict = field(default_factory=lambda: {"offset": 5,})
+    title: Optional[str] = None
+    title_format: dict = field(default_factory=lambda: {"fontsize": 16})
+    x_lim_add_eps: float = 1e-5
+    square_subplots: bool = True
+
+    def __getitem__(self, key):
+        return eval(f'self.{key}')
+
+    def __setitem__(self, key, item):
+        self.__dict__[key] = item
 
 def hex2rgb(hex: str) -> List[int]:
     """Pass 16 to the integer function for change of base"""
@@ -586,20 +613,24 @@ def infer_limits(
         points: List of points.
         eps: Relative margin for the limits.
     """
-    limits = []
-    for d in range(dim):
-        # get min and max across all sets of samples
-        min_val = min(np.min(sample[:, d]) for sample in samples)
-        max_val = max(np.max(sample[:, d]) for sample in samples)
-        # include points in the limits
-        if points is not None:
-            min_val = min(min_val, min(np.min(point[:, d]) for point in points))
-            max_val = max(max_val, max(np.max(point[:, d]) for point in points))
-        # add margin
-        max_min_range = max_val - min_val
-        epsilon_range = eps * max_min_range
-        limits.append([min_val - epsilon_range, max_val + epsilon_range])
-    return limits
+    # limits = []
+    # for d in range(dim):
+    # get min and max across all sets of samples
+    min_val = np.min(samples, axis=0)
+    max_val = np.max(samples, axis=0)
+    # include points in the limits
+    if points is not None:
+        points=np.asarray(points)
+        # pdb.set_trace()
+        min_val = np.min(np.vstack([min_val[None, :], points]), axis=0)
+        max_val = np.max(np.vstack([max_val[None, :], points]), axis=0)
+    # add margin
+    max_min_range = max_val - min_val
+    epsilon_range = eps * max_min_range
+    # limits.append([min_val - epsilon_range, max_val + epsilon_range])
+    limits = np.vstack([min_val - epsilon_range, max_val + epsilon_range])
+    
+    return torch.Tensor(limits.T)
 
 
 def prepare_for_plot(
@@ -617,7 +648,8 @@ def prepare_for_plot(
     # samples = convert_to_list_of_numpy(samples)
     samples = np.asarray(samples)
     if points is not None:
-        points = convert_to_list_of_numpy(points)
+        # points = convert_to_list_of_numpy(points)
+        points = np.asarray(points)
 
     samples = handle_nan_infs(samples)
 
@@ -688,9 +720,9 @@ def get_conditional_diag_func(opts, limits, eps_margins, resolution):
 
     return diag_func
 
-TNum = TypeVar('TNum', int, float)
+TNum = TypeVar('TNum', int, float, np.ndarray, torch.Tensor)
 def pairplot(
-    samples: Union[np.ndarray, torch.Tensor, List[TNum]],
+    samples: Union[np.ndarray, torch.Tensor],
     points: Optional[
         Union[List[np.ndarray], List[torch.Tensor], np.ndarray, torch.Tensor]
     ] = None,
@@ -706,7 +738,7 @@ def pairplot(
     diag_kwargs: Optional[Union[List[Optional[Dict]], Dict]] = None,
     upper_kwargs: Optional[Union[List[Optional[Dict]], Dict]] = None,
     lower_kwargs: Optional[Union[List[Optional[Dict]], Dict]] = None,
-    fig_kwargs: Optional[Dict] = None,
+    fig_kwargs: Optional[Union[Dict, FigKwargs]] = None,
     fig: Optional[FigureBase] = None,
     axes: Optional[Axes] = None,
     **kwargs: Optional[Any],
@@ -719,7 +751,7 @@ def pairplot(
     2D-marginal of the distribution.
 
     Args:
-        samples: Samples used to build the histogram.
+        samples: Samples used to build the histogram. 2d Array (sample, parameter)
         points: List of additional points to scatter.
         limits: Array containing the plot xlim for each parameter dimension. If None,
             just use the min and max of the passed samples
@@ -742,7 +774,7 @@ def pairplot(
         lower_kwargs: Additional arguments to adjust the lower diagonal plot,
             see the source code in `_get_default_offdiag_kwarg()`
         fig_kwargs: Additional arguments to adjust the overall figure,
-            see the source code in `_get_default_fig_kwargs()`
+            see the source code in `FigKwargs`
         fig: matplotlib figure to plot on.
         axes: matplotlib axes corresponding to fig.
         **kwargs: Additional arguments to adjust the plot (deprecated).
@@ -778,13 +810,17 @@ def pairplot(
     samples, dim, limits = prepare_for_plot(samples, limits, points)
 
     # prepate figure kwargs
-    fig_kwargs_filled = _get_default_fig_kwargs()
+    # fig_kwargs_filled = _get_default_fig_kwargs()
+    fig_kwargs_filled = FigKwargs().__dict__
+    if type(fig_kwargs) == FigKwargs:
+        fig_kwargs = fig_kwargs.__dict__
+    
     # update the defaults dictionary with user provided values
     fig_kwargs_filled = _update(fig_kwargs_filled, fig_kwargs)
 
     # checks.
     if fig_kwargs_filled["legend"]:
-        assert len(fig_kwargs_filled["samples_labels"]) >= len(samples), (
+        assert len(fig_kwargs_filled["samples_labels"]) >= samples.shape[1], (
             "Provide at least as many labels as samples."
         )
     if offdiag is not None:
@@ -792,10 +828,11 @@ def pairplot(
         upper = offdiag
 
     # Prepare diag
-    diag_list = to_list_string(diag, len(samples))
-    diag_kwargs_list = to_list_kwargs(diag_kwargs, len(samples))
+    diag_list = to_list_string(diag, samples.shape[1])
+    diag_kwargs_list = to_list_kwargs(diag_kwargs, samples.shape[1])
     diag_func = get_diag_funcs(diag_list)
     diag_kwargs_filled = []
+    # pdb.set_trace()
     for i, (diag_i, diag_kwargs_i) in enumerate(
         zip(diag_list, diag_kwargs_list, strict=False)
     ):
@@ -805,8 +842,8 @@ def pairplot(
         diag_kwargs_filled.append(diag_kwarg_filled_i)
 
     # Prepare upper
-    upper_list = to_list_string(upper, len(samples))
-    upper_kwargs_list = to_list_kwargs(upper_kwargs, len(samples))
+    upper_list = to_list_string(upper, samples.shape[1])
+    upper_kwargs_list = to_list_kwargs(upper_kwargs, samples.shape[1])
     upper_func = get_offdiag_funcs(upper_list)
     upper_kwargs_filled = []
     for i, (upper_i, upper_kwargs_i) in enumerate(
@@ -818,8 +855,8 @@ def pairplot(
         upper_kwargs_filled.append(upper_kwarg_filled_i)
 
     # Prepare lower
-    lower_list = to_list_string(lower, len(samples))
-    lower_kwargs_list = to_list_kwargs(lower_kwargs, len(samples))
+    lower_list = to_list_string(lower, samples.shape[1])
+    lower_kwargs_list = to_list_kwargs(lower_kwargs, samples.shape[1])
     lower_func = get_offdiag_funcs(lower_list)
     lower_kwargs_filled = []
     for i, (lower_i, lower_kwargs_i) in enumerate(
@@ -829,7 +866,7 @@ def pairplot(
         # update the defaults dictionary with user provided values
         lower_kwarg_filled_i = _update(lower_kwarg_filled_i, lower_kwargs_i)
         lower_kwargs_filled.append(lower_kwarg_filled_i)
-
+    # pdb.set_trace()
     return _arrange_grid(
         diag_func,
         upper_func,
@@ -1004,6 +1041,8 @@ def _get_default_offdiag_kwargs(offdiag: Optional[str], i: int = 0) -> Dict:
         offdiag_kwargs = {}
     return offdiag_kwargs
 
+#@dataclass
+#class 
 
 def _get_default_diag_kwargs(diag: Optional[str], i: int = 0) -> Dict:
     """Get default diag kwargs."""
@@ -1017,6 +1056,7 @@ def _get_default_diag_kwargs(diag: Optional[str], i: int = 0) -> Dict:
         }
 
     elif diag == "hist":
+        # pdb.set_trace()
         diag_kwargs = {
             "bin_heuristic": "Freedman-Diaconis",
             "mpl_kwargs": {
@@ -1037,7 +1077,7 @@ def _get_default_diag_kwargs(diag: Optional[str], i: int = 0) -> Dict:
 
 
 def _get_default_fig_kwargs() -> Dict:
-    """Get default figure kwargs."""
+    """Get default figure kwargs. Deprecated, replaced by DefaultFigKwargs """
     return {
         "legend": None,
         "legend_kwargs": {},
@@ -1297,7 +1337,7 @@ def _arrange_grid(
         fig: matplotlib figure to plot on.
         axes: matplotlib axes corresponding to fig.
         fig_kwargs: Additional arguments to adjust the overall figure,
-            see the source code in `_get_default_fig_kwargs()`
+            see the source code in `FigKwargs`
 
     Returns:
         Fig: matplotlib figure

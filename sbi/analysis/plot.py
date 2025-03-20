@@ -811,12 +811,12 @@ def pairplot(
 
     # prepate figure kwargs
     # fig_kwargs_filled = _get_default_fig_kwargs()
-    fig_kwargs_filled = FigKwargs().__dict__
+    fig_kwargs_filled = FigKwargs().__dict__  # Get defaults
     if type(fig_kwargs) == FigKwargs:
-        fig_kwargs = fig_kwargs.__dict__
-    
-    # update the defaults dictionary with user provided values
-    fig_kwargs_filled = _update(fig_kwargs_filled, fig_kwargs)
+        fig_kwargs_filled = fig_kwargs.__dict__  # Overwrite defaults with user input
+    elif type(fig_kwargs) == dict:
+        # Update defaults with user-provided dictionary
+        fig_kwargs_filled = _update(fig_kwargs_filled, fig_kwargs)
 
     # checks.
     if fig_kwargs_filled["legend"]:
@@ -833,6 +833,7 @@ def pairplot(
     diag_func = get_diag_funcs(diag_list)
     diag_kwargs_filled = []
     # pdb.set_trace()
+    pdb.set_trace()
     for i, (diag_i, diag_kwargs_i) in enumerate(
         zip(diag_list, diag_kwargs_list, strict=False)
     ):
@@ -1042,7 +1043,14 @@ def _get_default_offdiag_kwargs(offdiag: Optional[str], i: int = 0) -> Dict:
     return offdiag_kwargs
 
 #@dataclass
-#class 
+#class MplKwargs:
+
+
+@dataclass
+class DiagKwargs:
+    bw_method: str = "scott"
+    bins: int = 50
+
 
 def _get_default_diag_kwargs(diag: Optional[str], i: int = 0) -> Dict:
     """Get default diag kwargs."""
